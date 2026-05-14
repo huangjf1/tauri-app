@@ -30,7 +30,9 @@ jobs:
           npm install -g @tauri-apps/cli
 
       - name: Build Tauri App for macOS
-        run: npm run tauri build -- --target aarch64-apple-darwin
+        run: |
+          export PATH="$PWD/node_modules/.bin:$PATH"
+          npm run tauri build -- --target aarch64-apple-darwin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
