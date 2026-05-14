@@ -26,20 +26,16 @@ jobs:
       - name: Install dependencies
         run: |
           npm install
-          npm install -g @tauri-apps/cli
+          ls -la node_modules/.bin/ | head -20
 
       - name: Build frontend
         run: |
-          ./node_modules/.bin/vue-tsc --noEmit
-          ./node_modules/.bin/vite build
+          node ./node_modules/.bin/vue-tsc --noEmit
+          node ./node_modules/.bin/vite build
 
       - name: Build Tauri App for macOS
-        run: npm run tauri build -- --target aarch64-apple-darwin --no-bundle
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build DMG
-        run: npm run tauri build -- --target aarch64-apple-darwin --bundles dmg
+        run: |
+          npm run tauri build -- --target aarch64-apple-darwin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
