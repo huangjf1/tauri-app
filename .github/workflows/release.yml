@@ -29,10 +29,11 @@ jobs:
           npm install
           npm install -g @tauri-apps/cli
 
+      - name: Build frontend
+        run: npx vue-tsc --noEmit && npx vite build
+
       - name: Build Tauri App for macOS
-        run: |
-          export PATH="$PWD/node_modules/.bin:$PATH"
-          npm run tauri build -- --target aarch64-apple-darwin
+        run: npm run tauri build -- --target aarch64-apple-darwin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
