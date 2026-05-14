@@ -1,48 +1,47 @@
-name: Release
-
-on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-
-jobs:
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
-
-      - name: Install dependencies
-        run: |
-          npm install
-          npm install -g @tauri-apps/cli
-
-      - name: Build frontend
-        run: npx vue-tsc --noEmit && npx vite build
-
-      - name: Build Tauri App for macOS
-        run: npm run tauri build -- --target aarch64-apple-darwin
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload DMG to Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-          draft: true
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WPS Plugin Manager",
+  "version": "1.0.0",
+  "identifier": "com.wps.plugin.manager",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "fullscreen": false,
+        "resizable": false,
+        "title": "WPS 插件管理器",
+        "width": 500,
+        "height": 450,
+        "center": true,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "WPS 插件管理器",
+    "longDescription": "用于安装和卸载 WPS Office 的 jaidoc-wps 插件",
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.13"
+    }
+  }
+}
