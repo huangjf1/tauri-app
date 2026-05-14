@@ -41,8 +41,7 @@
     "longDescription": "用于安装和卸载 WPS Office 的 jaidoc-wps 插件",
     "macOS": {
       "frameworks": [],
-      "minimumSystemVersion": "10.13",
-      "license": "MIT"
+      "minimumSystemVersion": "10.13"
     }
   }
 }
