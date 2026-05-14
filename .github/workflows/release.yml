@@ -25,7 +25,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install
+          npm ci
           npm install -g @tauri-apps/cli
 
       - name: Build Tauri App for macOS
