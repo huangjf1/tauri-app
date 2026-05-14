@@ -25,14 +25,15 @@ jobs:
 
       - name: Install dependencies
         run: |
+          rm -rf node_modules package-lock.json
           npm install
-          npm install -g @tauri-apps/cli
+          ls node_modules/.bin/
 
-      - name: Build frontend
-        run: npm run build
-
-      - name: Build Tauri App for macOS
-        run: npm run tauri build -- --target aarch64-apple-darwin
+      - name: Build
+        run: |
+          export PATH="./node_modules/.bin:$PATH"
+          npm run build
+          npm run tauri build -- --target aarch64-apple-darwin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
