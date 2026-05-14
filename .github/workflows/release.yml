@@ -47,4 +47,4 @@ jobs:
             详见 [CHANGELOG.md](CHANGELOG.md)
           releaseDraft: true
           prerelease: false
-          args: --target universal-apple-darwin
+          args: --target aarch64-apple-darwin
