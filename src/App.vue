@@ -1,368 +1,556 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/tauri";
+import { ref, computed, onMounted } from 'vue'
+import { invoke } from '@tauri-apps/api/tauri'
 
-type OperationType = "install" | "uninstall" | null;
-type ProtocolType = "https" | "http";
+type ProtocolType = 'https' | 'http'
+type TabType = 'install' | 'list'
 
-const domain = ref("");
-const protocol = ref<ProtocolType>("https");
-const loading = ref(false);
-const message = ref("");
-const messageType = ref<"success" | "error" | "info">("info");
-const currentOperation = ref<OperationType>(null);
+interface PluginInfo {
+  name: string
+  url: string
+  plugin_type: string
+}
 
-const setOperation = (op: OperationType) => {
-  currentOperation.value = op;
-  message.value = "";
-  if (op === "uninstall") {
-    domain.value = "";
-  }
-};
+// 预设插件模板
+const PRESETS = [
+  { label: 'jaidoc-wps', name: 'jaidoc-wps', path: '/jaidoc-wps/' },
+  { label: '自定义插件', name: '', path: '' }
+]
+
+const currentTab = ref<TabType>('install')
+const protocol = ref<ProtocolType>('https')
+const domain = ref('')
+const pluginName = ref('jaidoc-wps')
+const pluginPath = ref('/jaidoc-wps/')
+const selectedPreset = ref(0)
+
+const loading = ref(false)
+const message = ref('')
+const messageType = ref<'success' | 'error' | 'info'>('info')
+
+const plugins = ref<PluginInfo[]>([])
+const listLoading = ref(false)
+const uninstalling = ref('')
+
+const generatedUrl = computed(() => {
+  if (!domain.value.trim()) return ''
+  const path = pluginPath.value || '/'
+  return `${protocol.value}://${domain.value.trim()}${path.startsWith('/') ? path : '/' + path}`
+})
+
+const canInstall = computed(() => {
+  return domain.value.trim() && pluginName.value.trim() && pluginPath.value.trim()
+})
+
+const selectPreset = (idx: number) => {
+  selectedPreset.value = idx
+  const preset = PRESETS[idx]
+  pluginName.value = preset.name
+  pluginPath.value = preset.path
+}
+
+const showMsg = (text: string, type: 'success' | 'error' | 'info') => {
+  message.value = text
+  messageType.value = type
+}
 
 const handleInstall = async () => {
-  if (!domain.value.trim()) {
-    message.value = "请输入域名";
-    messageType.value = "error";
-    return;
+  if (!canInstall.value) {
+    showMsg('请填写完整的插件信息', 'error')
+    return
   }
 
-  loading.value = true;
-  message.value = "正在安装插件...";
-  messageType.value = "info";
+  loading.value = true
+  message.value = ''
 
   try {
-    const result = await invoke<string>("install_plugin", { 
+    const result = await invoke<string>('install_plugin', {
       domain: domain.value.trim(),
-      protocol: protocol.value
-    });
-    message.value = result;
-    messageType.value = "success";
+      protocol: protocol.value,
+      pluginName: pluginName.value.trim(),
+      pluginPath: pluginPath.value.trim()
+    })
+    showMsg(result, 'success')
+    // 安装成功后刷新列表
+    if (currentTab.value === 'list') {
+      await loadPlugins()
+    }
   } catch (error) {
-    message.value = `安装失败: ${error}`;
-    messageType.value = "error";
+    showMsg(`${error}`, 'error')
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 
-const handleUninstall = async () => {
-  loading.value = true;
-  message.value = "正在卸载插件...";
-  messageType.value = "info";
+const switchToList = () => {
+  currentTab.value = 'list'
+  loadPlugins()
+}
+
+const loadPlugins = async () => {
+  listLoading.value = true
+  try {
+    plugins.value = await invoke<PluginInfo[]>('list_plugins')
+  } catch (error) {
+    showMsg(`读取插件列表失败: ${error}`, 'error')
+  } finally {
+    listLoading.value = false
+  }
+}
+
+const handleUninstall = async (name: string) => {
+  uninstalling.value = name
+  message.value = ''
 
   try {
-    const result = await invoke<string>("uninstall_plugin");
-    message.value = result;
-    messageType.value = "success";
+    const result = await invoke<string>('uninstall_plugin', { pluginName: name })
+    showMsg(result, 'success')
+    await loadPlugins()
   } catch (error) {
-    message.value = `卸载失败: ${error}`;
-    messageType.value = "error";
+    showMsg(`${error}`, 'error')
   } finally {
-    loading.value = false;
+    uninstalling.value = ''
   }
-};
+}
+
+onMounted(() => {
+  loadPlugins()
+})
 </script>
 
 <template>
-  <div class="container">
-    <h1 class="title">WPS 插件管理器</h1>
-    <p class="subtitle">管理 jaidoc-wps 插件</p>
+  <div class="app">
+    <header class="header">
+      <h1 class="header-title">WPS 插件管理器</h1>
+      <p class="header-desc">安装、卸载 WPS Office jsplugins 加载项</p>
+    </header>
 
-    <div class="button-group">
-      <button
-        class="btn"
-        :class="{ active: currentOperation === 'install' }"
-        @click="setOperation('install')"
-        :disabled="loading"
-      >
-        安装插件
+    <div class="divider">
+      <button class="divider-tab" :class="{ active: currentTab === 'install' }" @click="currentTab = 'install'">
+        安装
       </button>
-      <button
-        class="btn btn-danger"
-        :class="{ active: currentOperation === 'uninstall' }"
-        @click="setOperation('uninstall')"
-        :disabled="loading"
-      >
-        卸载插件
-      </button>
+      <button class="divider-tab" :class="{ active: currentTab === 'list' }" @click="switchToList">已安装</button>
     </div>
 
-    <div v-if="currentOperation === 'install'" class="form-section">
-      <div class="input-group">
-        <label>协议</label>
-        <div class="protocol-selector">
+    <div class="body">
+      <!-- 安装面板 -->
+      <div v-if="currentTab === 'install'" class="section">
+        <!-- 插件模板 -->
+        <label class="label">插件类型</label>
+        <div class="preset-group">
           <button
-            class="protocol-btn"
-            :class="{ active: protocol === 'https' }"
-            @click="protocol = 'https'"
-            :disabled="loading"
+            v-for="(p, i) in PRESETS"
+            :key="i"
+            class="preset-btn"
+            :class="{ active: selectedPreset === i }"
+            @click="selectPreset(i)"
           >
-            HTTPS
-          </button>
-          <button
-            class="protocol-btn"
-            :class="{ active: protocol === 'http' }"
-            @click="protocol = 'http'"
-            :disabled="loading"
-          >
-            HTTP
+            {{ p.label }}
           </button>
         </div>
-      </div>
 
-      <div class="input-group">
-        <label for="domain">域名</label>
-        <div class="domain-input-wrapper">
-          <span class="protocol-prefix">{{ protocol }}://</span>
+        <!-- 协议 -->
+        <label class="label">协议</label>
+        <div class="radio-group">
+          <label class="radio">
+            <input type="radio" v-model="protocol" value="https" />
+            HTTPS
+          </label>
+          <label class="radio">
+            <input type="radio" v-model="protocol" value="http" />
+            HTTP
+          </label>
+        </div>
+
+        <!-- 域名 -->
+        <label class="label">域名</label>
+        <div class="input-row">
+          <span class="input-addon">{{ protocol }}://</span>
           <input
-            id="domain"
             v-model="domain"
             type="text"
-            placeholder="例如: workin.hanweb.com"
-            :disabled="loading"
+            placeholder="workin.hanweb.com"
             @keyup.enter="handleInstall"
+            class="input"
           />
         </div>
-        <span class="hint">输入插件服务器域名，不需要协议前缀</span>
+
+        <!-- 自定义时显示插件名和路径 -->
+        <template v-if="selectedPreset === 1">
+          <label class="label">插件名称</label>
+          <input v-model="pluginName" type="text" placeholder="my-plugin" class="input-full" />
+
+          <label class="label">路径</label>
+          <div class="input-row">
+            <span class="input-addon">{{ protocol }}://{{ domain || 'domain' }}</span>
+            <input v-model="pluginPath" type="text" placeholder="/my-plugin" class="input" />
+          </div>
+        </template>
+
+        <div v-if="generatedUrl" class="preview">{{ generatedUrl }}</div>
+
+        <button class="btn btn-primary" @click="handleInstall" :disabled="loading || !canInstall">
+          {{ loading ? '安装中…' : '安装' }}
+        </button>
       </div>
 
-      <button
-        class="btn btn-primary"
-        @click="handleInstall"
-        :disabled="loading || !domain.trim()"
-      >
-        {{ loading ? "安装中..." : "确认安装" }}
-      </button>
-    </div>
+      <!-- 已安装列表 -->
+      <div v-if="currentTab === 'list'" class="section">
+        <div class="list-header">
+          <span class="list-count">共 {{ plugins.length }} 个插件</span>
+          <button class="btn-link" @click="loadPlugins" :disabled="listLoading">
+            {{ listLoading ? '刷新中…' : '刷新' }}
+          </button>
+        </div>
 
-    <div v-if="currentOperation === 'uninstall'" class="form-section">
-      <p class="warning-text">⚠️ 确定要卸载 jaidoc-wps 插件吗？</p>
-      <button
-        class="btn btn-danger"
-        @click="handleUninstall"
-        :disabled="loading"
-      >
-        {{ loading ? "卸载中..." : "确认卸载" }}
-      </button>
-    </div>
+        <div v-if="plugins.length === 0" class="empty">暂无已安装的插件</div>
 
-    <div v-if="message" class="message" :class="messageType">
-      {{ message }}
+        <div v-else class="plugin-list">
+          <div v-for="p in plugins" :key="p.name" class="plugin-item">
+            <div class="plugin-info">
+              <span class="plugin-name">{{ p.name }}</span>
+              <span class="plugin-url">{{ p.url }}</span>
+            </div>
+            <button
+              class="btn btn-sm btn-danger-outline"
+              @click="handleUninstall(p.name)"
+              :disabled="uninstalling === p.name"
+            >
+              {{ uninstalling === p.name ? '卸载中…' : '卸载' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 消息 -->
+      <div v-if="message" class="msg" :class="messageType">{{ message }}</div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.container {
-  padding: 30px;
-  max-width: 500px;
-  margin: 0 auto;
-}
-
-.title {
-  font-size: 24px;
-  font-weight: 600;
-  color: #333;
-  margin: 0 0 8px 0;
-  text-align: center;
-}
-
-.subtitle {
-  font-size: 14px;
-  color: #666;
-  margin: 0 0 30px 0;
-  text-align: center;
-}
-
-.button-group {
+.app {
+  min-height: 100vh;
+  background: #fff;
   display: flex;
-  gap: 12px;
-  margin-bottom: 30px;
-}
-
-.btn {
-  flex: 1;
-  padding: 12px 20px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  background: white;
-  color: #333;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn:hover:not(:disabled) {
-  border-color: #409eff;
-  color: #409eff;
-}
-
-.btn.active {
-  border-color: #409eff;
-  background: #409eff;
-  color: white;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-danger {
-  border-color: #f56c6c;
-  color: #f56c6c;
-}
-
-.btn-danger:hover:not(:disabled) {
-  border-color: #f56c6c;
-  background: #fef0f0;
-}
-
-.btn-danger.active {
-  border-color: #f56c6c;
-  background: #f56c6c;
-  color: white;
-}
-
-.btn-primary {
-  width: 100%;
-  border-color: #67c23a;
-  background: #67c23a;
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #85ce61;
-  border-color: #85ce61;
-}
-
-.form-section {
-  background: #f5f7fa;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-}
-
-.input-group {
-  margin-bottom: 16px;
-}
-
-.input-group label {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-  margin-bottom: 8px;
-}
-
-.protocol-selector {
-  display: flex;
-  gap: 8px;
-}
-
-.protocol-btn {
-  flex: 1;
-  padding: 8px 16px;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  background: white;
-  color: #606266;
+  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
+  color: #1d1d1f;
   font-size: 13px;
+  line-height: 1.5;
+}
+
+/* header */
+.header {
+  padding: 20px 24px 16px;
+}
+.header-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+.header-desc {
+  margin: 4px 0 0;
+  color: #86868b;
+  font-size: 12px;
+}
+
+/* 分段控制 */
+.divider {
+  display: flex;
+  border-bottom: 1px solid #e5e5e5;
+  padding: 0 24px;
+}
+.divider-tab {
+  padding: 8px 0;
+  margin-right: 24px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: #86868b;
   cursor: pointer;
-  transition: all 0.2s;
+  position: relative;
+  font-family: inherit;
+}
+.divider-tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1.5px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.divider-tab.active {
+  color: #1d1d1f;
+}
+.divider-tab.active::after {
+  background: #1d1d1f;
 }
 
-.protocol-btn:hover:not(:disabled) {
-  border-color: #409eff;
-  color: #409eff;
+/* body */
+.body {
+  flex: 1;
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.protocol-btn.active {
-  border-color: #409eff;
-  background: #409eff;
-  color: white;
+/* label */
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #86868b;
+  margin-bottom: -4px;
 }
 
-.protocol-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+/* preset buttons */
+.preset-group {
+  display: flex;
+  gap: 6px;
+}
+.preset-btn {
+  padding: 5px 12px;
+  border: 1px solid #d2d2d7;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 12px;
+  color: #1d1d1f;
+  cursor: pointer;
+  font-family: inherit;
+}
+.preset-btn.active {
+  background: #1d1d1f;
+  color: #fff;
+  border-color: #1d1d1f;
 }
 
-.domain-input-wrapper {
+/* radio */
+.radio-group {
+  display: flex;
+  gap: 16px;
+}
+.radio {
   display: flex;
   align-items: center;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  background: white;
+  gap: 5px;
+  font-size: 13px;
+  color: #1d1d1f;
+  cursor: pointer;
+}
+.radio input {
+  margin: 0;
+  accent-color: #1d1d1f;
+}
+
+/* input */
+.input-row {
+  display: flex;
+  border: 1px solid #d2d2d7;
+  border-radius: 6px;
   overflow: hidden;
 }
-
-.protocol-prefix {
-  padding: 10px 8px 10px 12px;
-  background: #f5f7fa;
-  color: #606266;
-  font-size: 14px;
-  border-right: 1px solid #dcdfe6;
+.input-row:focus-within {
+  border-color: #1d1d1f;
+}
+.input-addon {
+  padding: 7px 10px;
+  background: #f5f5f7;
+  color: #86868b;
+  font-size: 12px;
+  border-right: 1px solid #d2d2d7;
   white-space: nowrap;
+  user-select: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
 }
-
-.domain-input-wrapper input {
+.input {
   flex: 1;
-  padding: 10px 12px;
+  padding: 7px 10px;
   border: none;
-  font-size: 14px;
+  font-size: 13px;
   outline: none;
-  background: transparent;
+  font-family: inherit;
+  background: #fff;
+  color: #1d1d1f;
+  min-width: 0;
+}
+.input::placeholder {
+  color: #c7c7cc;
+}
+.input-full {
+  padding: 7px 10px;
+  border: 1px solid #d2d2d7;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+  background: #fff;
+  color: #1d1d1f;
+  width: 100%;
+}
+.input-full:focus {
+  border-color: #1d1d1f;
+}
+.input-full::placeholder {
+  color: #c7c7cc;
 }
 
-.domain-input-wrapper input:disabled {
-  background: #f5f7fa;
+/* help text */
+.help {
+  font-size: 11px;
+  color: #86868b;
+  margin: 0;
+}
+
+/* url preview */
+.preview {
+  font-size: 11px;
+  color: #86868b;
+  background: #f5f5f7;
+  padding: 6px 10px;
+  border-radius: 4px;
+  word-break: break-all;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* button */
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s;
+  width: fit-content;
+  min-width: 80px;
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: #1d1d1f;
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.85;
+}
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+  min-width: 56px;
+}
+.btn-danger-outline {
+  background: #fff;
+  color: #c62828;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+.btn-danger-outline:hover:not(:disabled) {
+  background: #fff5f5;
+  border-color: #c62828;
+}
+.btn-link {
+  border: none;
+  background: none;
+  color: #1d1d1f;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.btn-link:disabled {
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-.domain-input-wrapper:focus-within {
-  border-color: #409eff;
+/* list header */
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
-
-.hint {
-  display: block;
+.list-count {
   font-size: 12px;
-  color: #909399;
-  margin-top: 6px;
+  color: #86868b;
 }
 
-.warning-text {
-  color: #f56c6c;
-  font-size: 14px;
-  margin: 0 0 16px 0;
+/* empty */
+.empty {
+  color: #86868b;
+  font-size: 13px;
   text-align: center;
+  padding: 32px 0;
 }
 
-.message {
-  padding: 12px 16px;
-  border-radius: 4px;
-  font-size: 14px;
-  text-align: center;
+/* plugin list */
+.plugin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: #e5e5e5;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.plugin-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #fff;
+  gap: 12px;
+}
+.plugin-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.plugin-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1d1d1f;
+}
+.plugin-url {
+  font-size: 11px;
+  color: #86868b;
+  word-break: break-all;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+}
+
+/* message */
+.msg {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
   word-break: break-word;
 }
-
-.message.success {
-  background: #f0f9eb;
-  color: #67c23a;
-  border: 1px solid #e1f3d8;
+.msg.success {
+  background: #e8f5e9;
+  color: #2e7d32;
 }
-
-.message.error {
-  background: #fef0f0;
-  color: #f56c6c;
-  border: 1px solid #fde2e2;
+.msg.error {
+  background: #ffebee;
+  color: #c62828;
 }
-
-.message.info {
-  background: #f4f4f5;
-  color: #909399;
-  border: 1px solid #e9e9eb;
+.msg.info {
+  background: #f5f5f7;
+  color: #86868b;
 }
 </style>
